@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     model_base_url: str | None = None
     model_api_key_env: str | None = None
     """Name of the env var holding the key for a compatible endpoint at `model_base_url`."""
+    model_headers: dict[str, str] = Field(default_factory=dict)
+    """Extra HTTP headers for that endpoint (for example a stable session id)."""
     helper_effort_cap: str | None = None
     """Caps every helper's effort (for example `xhigh`) for cost control."""
     model_timeout_seconds: float = Field(default=600.0, gt=0)

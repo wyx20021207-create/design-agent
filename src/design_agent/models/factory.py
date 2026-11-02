@@ -93,13 +93,15 @@ def build_chat_model(
     }
     if resolved.base_url is not None:
         kwargs["base_url"] = resolved.base_url
-        key = _named_key(settings.model_api_key_env, project_root)
+        key = named_key(settings.model_api_key_env, project_root)
         if key is None:
             raise ModelConfigurationError(
                 "DESIGN_AGENT_MODEL_BASE_URL needs DESIGN_AGENT_MODEL_API_KEY_ENV naming the "
                 "variable that holds that endpoint's key"
             )
         kwargs["api_key"] = key
+        if settings.model_headers:
+            kwargs["default_headers"] = dict(settings.model_headers)
     kwargs.update(overrides)
 
     if spec.via_gateway:
@@ -170,7 +172,13 @@ def _openai(settings: Settings, resolved: ResolvedModel, kwargs: dict[str, Any])
         kwargs.setdefault("api_key", settings.openai_api_key.get_secret_value())
     kwargs.setdefault("use_responses_api", resolved.caps.responses_api)
     if resolved.effort is not None:
-        kwargs.setdefault("reasoning", {"effort": resolved.effort})
+        if resolved.base_url is not None:
+            # A compatible endpoint takes the OpenAI wire name, not ChatOpenAI's `reasoning`.
+            extra_body = dict(kwargs.get("extra_body") or {})
+            extra_body["reasoning_effort"] = resolved.effort
+            kwargs["extra_body"] = extra_body
+        else:
+            kwargs.setdefault("reasoning", {"effort": resolved.effort})
     if resolved.max_output_tokens is not None:
         kwargs.setdefault("max_completion_tokens", resolved.max_output_tokens)
     return ChatOpenAI(model=resolved.spec.model, **kwargs)
@@ -184,7 +192,7 @@ def _gateway_key(settings: Settings) -> str:
     return ""
 
 
-def _named_key(env_name: str | None, project_root: Path | None) -> str | None:
+def named_key(env_name: str | None, project_root: Path | None) -> str | None:
     """The value of the variable `env_name` from the process or the project `.env`."""
     if not env_name:
         return None

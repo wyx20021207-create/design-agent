@@ -110,6 +110,22 @@ CAPABILITY_REGISTRY: dict[str, ModelCapabilities] = {
     "openai:gpt-6.1-sol": _openai("medium"),
     "openai:gpt-6-sol": _openai("medium"),
     "openai:gpt-5.6-sol": _openai("medium"),
+    # Served by OpenCode Go's OpenAI-compatible endpoint, not OpenAI's own API. Facts come from
+    # `GET https://opencode.ai/inference/v1/models`: image input, tools, low/high/max effort.
+    "openai:deepseek-v4.1-flash": ModelCapabilities(
+        provider="openai",
+        vision=True,
+        disclosure=ToolDisclosure.PORTABLE_SELECTOR,
+        efforts=frozenset({"low", "high", "max"}),
+        default_effort="high",
+        context_window=1_000_000,
+        max_output_tokens=384_000,
+        responses_api=False,
+        integration_package="langchain-openai",
+        verified=True,
+        notes="OpenCode Go custom endpoint: chat completions only; vision per its model list.",
+        extra={"custom_endpoint_only": True},
+    ),
     "google_genai:gemini-3.6-flash": ModelCapabilities(
         provider="google_genai",
         vision=True,

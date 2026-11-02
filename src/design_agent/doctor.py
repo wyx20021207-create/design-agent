@@ -14,7 +14,7 @@ from typing import Literal
 
 from design_agent.brand.schema import BrandPackError, load_brand_pack
 from design_agent.config import Settings
-from design_agent.models.factory import Role, resolve_model
+from design_agent.models.factory import Role, named_key, resolve_model
 from design_agent.models.registry import ModelConfigurationError, ToolDisclosure
 
 Status = Literal["ok", "warn", "fail"]
@@ -113,6 +113,16 @@ def _check_models(settings: Settings) -> list[Check]:
                 "model:key",
                 "ok" if has_key else "warn",
                 "LangSmith Gateway key " + ("set" if has_key else "missing"),
+            )
+        )
+    elif settings.model_base_url and settings.model_api_key_env:
+        has_key = named_key(settings.model_api_key_env, None) is not None
+        name = settings.model_api_key_env
+        checks.append(
+            Check(
+                "model:key",
+                "ok" if has_key else "warn",
+                f"{name} {'set' if has_key else 'missing: `demo` works without it, `ask` does not'}",
             )
         )
     elif field := PROVIDER_KEYS.get(provider):

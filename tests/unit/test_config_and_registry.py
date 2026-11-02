@@ -128,6 +128,24 @@ def test_base_url_requires_a_named_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert build_chat_model(s, "lead").openai_api_base == "https://llm.example/v1"  # type: ignore[attr-defined]
 
 
+def test_custom_endpoint_sends_headers_and_reasoning_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EXAMPLE_KEY", "secret")
+    s = settings(
+        model="openai:deepseek-v4.1-flash",
+        model_base_url="https://llm.example/v1",
+        model_api_key_env="EXAMPLE_KEY",
+        model_headers={"x-opencode-session": "abc", "User-Agent": "design-agent/0.1"},
+    )
+    model = build_chat_model(s, "lead")
+    assert model.default_headers == {  # type: ignore[attr-defined]
+        "x-opencode-session": "abc",
+        "User-Agent": "design-agent/0.1",
+    }
+    assert model.extra_body == {"reasoning_effort": "high"}  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize(
     "model_id", sorted(k for k in CAPABILITY_REGISTRY if k.startswith(("anthropic:", "openai:")))
 )
@@ -137,9 +155,11 @@ def test_registry_agrees_with_installed_provider_profiles(model_id: str) -> None
         from langchain_anthropic.data._profiles import _PROFILES
     else:
         from langchain_openai.data._profiles import _PROFILES
+    caps = CAPABILITY_REGISTRY[model_id]
+    if caps.extra.get("custom_endpoint_only"):
+        pytest.skip(f"{model_id} is served by a custom endpoint, not the provider's own API")
     profile = _PROFILES.get(model)
     assert profile is not None, f"{model_id} is not a model the installed package knows"
-    caps = CAPABILITY_REGISTRY[model_id]
     assert caps.vision == bool(profile.get("image_inputs"))
     assert caps.max_output_tokens == profile.get("max_output_tokens")
     assert caps.context_window == profile.get("max_input_tokens")
