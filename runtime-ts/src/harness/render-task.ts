@@ -9,6 +9,7 @@
  * 因此 render 先查完成标记：同样的命令 + 同样的产物路径，重跑时直接跳过。
  */
 import { createHash } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { withAbortSignal, type Context } from "@earendil-works/chord/context";
 import { defineTask, type NextTaskState, type RunningTask } from "@earendil-works/pi-durable";
@@ -226,6 +227,13 @@ export const RenderTask = defineTask<RenderInput, RenderState, RenderResult>({
     },
 
     report: async (task, runtime, context) => {
+      // 故障注入用：让报告阶段停在这里，测试可以在这个窗口杀掉进程。
+      // 生产环境不设置这个变量。
+      const delay = Number(process.env["DESIGN_AGENT_REPORT_DELAY_MS"] ?? "0");
+      if (Number.isFinite(delay) && delay > 0) {
+        await sleep(delay, undefined, { signal: runtime.signal });
+      }
+
       const state = task.state.checkpoint;
       const ok = "result" in state;
       const headline = ok

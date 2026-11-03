@@ -5,9 +5,13 @@
  *
  *   npm run tools
  */
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 
 import { loadSettings } from "../src/config.ts";
+import { LocalOutboxAdapter, sha256Of } from "../src/delivery/adapter.ts";
 import {
   FetchRefused,
   checkUrl,
@@ -205,6 +209,33 @@ await requestMusic(elevenSettings, { prompt: "calm synth", lengthSeconds: 5 }, m
 check(musicBody?.["music_length_ms"] === 5000, "音乐时长没有换算成毫秒");
 
 console.log("media：词级时间 / 配音 / 音效 / 音乐请求  OK");
+
+// --- 交付适配器幂等：崩溃后重试不会重复写，也不会覆盖不同内容 ---
+const outboxRoot = join(loadSettings().dataDir, "outbox-test");
+const outbox = new LocalOutboxAdapter(outboxRoot);
+const adapterId = `adapter-${Date.now().toString(36)}`;
+const firstItem = {
+  name: "a.txt",
+  sourcePath: "/workspace/a.txt",
+  sha256: sha256Of(new Uint8Array([1, 2, 3])),
+  bytes: new Uint8Array([1, 2, 3]),
+};
+const firstDelivery = await outbox.deliver({ conversationId: adapterId, items: [firstItem] });
+const secondDelivery = await outbox.deliver({ conversationId: adapterId, items: [firstItem] });
+check(firstDelivery[0]?.skipped === false, "第一次交付不应跳过");
+check(secondDelivery[0]?.skipped === true, "同样内容第二次交付应跳过");
+check(secondDelivery[0]?.target === firstDelivery[0]?.target, "第二次不应换目标");
+
+const different = {
+  ...firstItem,
+  sha256: sha256Of(new Uint8Array([9, 9])),
+  bytes: new Uint8Array([9, 9]),
+};
+const thirdDelivery = await outbox.deliver({ conversationId: adapterId, items: [different] });
+check(thirdDelivery[0]?.target !== firstDelivery[0]?.target, "同名不同内容不应覆盖");
+rmSync(join(outboxRoot, adapterId), { recursive: true, force: true });
+
+console.log("交付适配器：同内容重试跳过 / 不同内容不覆盖  OK");
 
 // --- projects ---
 const runtime = await openRuntime(loadSettings());

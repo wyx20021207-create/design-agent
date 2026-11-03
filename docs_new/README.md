@@ -30,6 +30,8 @@
   - **异步 ReAct**：`start_render` 立刻返回 taskId；`RenderTask` 在后台跑命令、
     检查产物、写完成标记，再把回执作为一条输入投放回对话，唤醒模型开新一轮 run。
     崩溃后从最后一个 checkpoint 重跑，完成标记让重跑跳过已完成的工作
+  - **故障注入**：`npm run recovery` 在渲染完成、回执未提交时硬退出；重启后从
+    report 检查点续跑：不重渲染、回执一次、任务终态 completed
   - **交付幂等**：`upload_files` 在容器里算 sha256，对话级台账（Pi Durable doc）
     记录 (路径, 摘要)，只记确认送达的文件；同一文件第二次调用直接返回已交付。
     当前适配器把文件原子写入宿主机 `data/outbox/<conversation>/`
@@ -51,7 +53,7 @@
     一次拉起 2-4 个方向；child → parent 映射存 `design.subagents` 文档，重启后仍共享容器
   - **Steering**：飞书与 HTTP 在对话忙碌时用 `whenBusy:"steer"` 把补充要求并入当前 run
   - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
-- 下一步：故障注入与恢复、长任务进度提示，然后删除 Python 运行时
+- 下一步：长任务进度提示、worker 分档模型、技能端到端抽查，然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 

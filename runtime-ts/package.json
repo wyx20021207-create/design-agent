@@ -18,6 +18,7 @@
     "ownership": "tsx test/ownership.ts",
     "async": "tsx test/async.ts",
     "async-crash": "tsx test/async-crash-start.ts && tsx test/async-crash-resume.ts",
+    "recovery": "tsx test/recovery-start.ts && tsx test/recovery-resume.ts",
     "delivery": "tsx test/delivery.ts",
     "api": "tsx test/api.ts",
     "feishu": "tsx test/feishu.ts",
