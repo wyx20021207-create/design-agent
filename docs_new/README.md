@@ -23,6 +23,10 @@
   - **Harness + 模型 + CLI**：SQLite 存储、OpenCode Go（deepseek-v4.1-flash）、
     CodingTools 经 ExecutionEnv 进容器；`ask` 一句话即可让模型在容器里跑命令，
     重启进程后对话继续
+  - **第一条 vertical slice**：技能索引进系统提示；模型自己读 stills / brand-design /
+    design-wiki，写 BRIEF、渲染 1200×627、跑 brand-lint / artifact-contract /
+    text-fidelity / review-thumb，并按看图结果改了两处
+  - agent 目录归属：projects / attachments / references / .renders 交给 uid 1000
 - 下一步：任务（RenderTask + Reporter）、交付幂等，然后入口层
 
 ## 与 `docs/` 的关系

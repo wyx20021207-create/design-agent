@@ -26,17 +26,25 @@ import { ensureRunning, type ContainerOptions } from "../env/container.ts";
 import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
 import { RpcClient } from "../env/rpc.ts";
 import { stageWorkspace } from "../staging/stage.ts";
+import { loadSkillIndex, renderSkillIndex } from "./skills.ts";
 
-const PREAMBLE = `You are a design agent working on your own computer.
-Your computer is a Linux sandbox at /workspace: brand packs under /workspace/brand,
+const preamble = (skillIndex: string): string => `You are a design agent working on your own computer.
+Your computer is a Linux sandbox at /workspace: the brand pack under /workspace/brand,
 skills under /workspace/skills, deterministic render and gate scripts under /workspace/tools,
 and your own work under /workspace/projects.
-Read a skill before following it. Run the gates before you deliver.`;
+
+Read the matching skill before you start: /workspace/skills/<name>/SKILL.md.
+Run the gates in /workspace/tools before you call anything finished.
+
+Skills:
+${skillIndex}`;
 
 export interface Runtime {
   settings: Settings;
   harness: Harness;
   root: Conversation;
+  /** 新建一条对话，用于一次干净的任务。 */
+  create(): Promise<Conversation>;
   close(): Promise<void>;
 }
 
@@ -68,7 +76,11 @@ export async function openRuntime(
   registry.install(
     defineExtension({
       name: "design-agent",
-      sections: [section("preamble", () => PREAMBLE, { tag: false })],
+      sections: [
+        section("preamble", () => preamble(renderSkillIndex(loadSkillIndex(settings.root))), {
+          tag: false,
+        }),
+      ],
     }),
   );
 
@@ -109,6 +121,11 @@ export async function openRuntime(
     settings,
     harness,
     root,
+    create: () =>
+      harness.createConversation(
+        { ownership: { kind: "ownerless" }, agent: { model: settings.model } },
+        context,
+      ),
     close: async () => {
       for (const client of clients.values()) client.close();
       await harness.close(context);

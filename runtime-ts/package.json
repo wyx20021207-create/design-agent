@@ -13,7 +13,8 @@
     "conformance": "tsx test/conformance.ts",
     "staging": "tsx test/staging.ts",
     "isolation": "tsx test/isolation.ts",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "ownership": "tsx test/ownership.ts"
   },
   "dependencies": {
     "@earendil-works/chord": "^1.5.0",

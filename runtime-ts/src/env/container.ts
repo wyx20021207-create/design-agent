@@ -33,6 +33,15 @@ const docker = (args: string[]) =>
 
 const toDockerPath = (path: string): string => resolve(path).replace(/\\/g, "/");
 
+/** 镜像自带的目录属于 root；这些交给 agent，它才有地方写。 */
+const AGENT_DIRS = [
+  "/workspace",
+  "/workspace/projects",
+  "/workspace/attachments",
+  "/workspace/references",
+  "/workspace/.renders",
+];
+
 /** 保证容器在跑；不存在就建，存在但停了就起。 */
 export function ensureRunning(conversationId: string, options: ContainerOptions): ContainerRef {
   const ref = namesFor(conversationId, options.prefix);
@@ -64,7 +73,7 @@ export function ensureRunning(conversationId: string, options: ContainerOptions)
 
   if (created.status !== 0) throw new Error(`docker run 失败: ${created.stderr}`);
 
-  const chown = docker(["exec", "-u", "0", ref.name, "chown", "1000:1000", "/workspace"]);
+  const chown = docker(["exec", "-u", "0", ref.name, "chown", "1000:1000", ...AGENT_DIRS]);
   if (chown.status !== 0) throw new Error(`chown 失败: ${chown.stderr}`);
 
   return ref;
