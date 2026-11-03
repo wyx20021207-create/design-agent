@@ -12,6 +12,7 @@ import { AssistantEntry, type ConversationId, type EntryId } from "@earendil-wor
 import { loadSettings } from "./config.ts";
 import { openRuntime, type Runtime } from "./harness/runtime.ts";
 import { TASK_REPORT_ENTRY } from "./harness/render-task.ts";
+import { messageText } from "./text.ts";
 
 const WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const POLL_INTERVAL_MS = 250;
@@ -24,20 +25,6 @@ const [command, ...rest] = argv.filter((value) => value !== "--new" && value !==
 if (command !== "ask" || rest.length === 0) {
   console.error('用法: npm run cli -- ask [--new] [--wait] "你的要求"');
   process.exit(2);
-}
-
-/** 取出消息里的文本块；用户消息也可能是纯字符串。 */
-function messageText(message: { role: string; content: unknown } | undefined): string {
-  if (message === undefined) return "";
-  const { content } = message;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block): block is { type: "text"; text: string } => {
-      return typeof block === "object" && block !== null && (block as { type?: string }).type === "text";
-    })
-    .map((block) => block.text)
-    .join("\n");
 }
 
 /** 后台任务没结束时保持进程存活；任务结束后把新产生的消息打出来。 */

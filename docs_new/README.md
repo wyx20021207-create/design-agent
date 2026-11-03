@@ -33,7 +33,10 @@
   - **交付幂等**：`upload_files` 在容器里算 sha256，对话级台账（Pi Durable doc）
     记录 (路径, 摘要)，只记确认送达的文件；同一文件第二次调用直接返回已交付。
     当前适配器把文件原子写入宿主机 `data/outbox/<conversation>/`
-- 下一步：入口层（Fastify API + SSE / 飞书 webhook），然后删除 Python 运行时
+  - **入口层**：Fastify HTTP API（`POST /threads/:id/messages`、`GET /threads/:id/events`
+    SSE、线程状态、outbox 文件下载），Bearer token 鉴权，`requestId` 去重，外部线程
+    id 通过 Session 级文档映射到 Pi conversation；`npm run serve` 启动常驻进程
+- 下一步：飞书 webhook（requestId 去重、线程映射）、附件上传，然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 
