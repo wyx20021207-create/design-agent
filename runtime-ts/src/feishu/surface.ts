@@ -8,12 +8,13 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
-import type {
-  Conversation,
-  ConversationId,
-  ConversationView,
-  EntryId,
-  EntryRecord,
+import {
+  LiveDoc,
+  type Conversation,
+  type ConversationId,
+  type ConversationView,
+  type EntryId,
+  type EntryRecord,
 } from "@earendil-works/pi-durable";
 
 import { TASK_REPORT_ENTRY } from "../harness/render-task.ts";
@@ -23,6 +24,7 @@ import { messageText } from "../text.ts";
 import { downloadAttachments } from "./attachments.ts";
 import type { FeishuTransport } from "./client.ts";
 import { parseEvent, type FeishuEvent } from "./events.ts";
+import { progressLine } from "./progress.ts";
 import {
   advanceFeishuThread,
   markFeishuMessageSeen,
@@ -34,6 +36,11 @@ import {
 const RETRY_MS = 10_000;
 /** 飞书补投可能延迟很久；超过这个时间的消息不再执行，避免一小时前的指令突然跑起来。 */
 const STALE_MS = 5 * 60 * 1_000;
+/** 进度推送间隔；调试时可以调小。 */
+const PROGRESS_MS = (() => {
+  const value = Number(process.env["DESIGN_AGENT_PROGRESS_MS"] ?? "120000");
+  return Number.isFinite(value) && value >= 5_000 ? value : 120_000;
+})();
 
 export interface FeishuSurfaceOptions {
   runtime: Runtime;
@@ -60,6 +67,8 @@ export class FeishuSurface {
 
   readonly #watchers = new Map<string, () => Promise<void>>();
   readonly #starting = new Map<string, Promise<void>>();
+  /** 每个线程一条进度定时器；空闲时自动停。 */
+  readonly #progress = new Map<string, NodeJS.Timeout>();
   #ws: lark.WSClient | undefined;
   #closed = false;
 
@@ -76,12 +85,17 @@ export class FeishuSurface {
   async start(): Promise<void> {
     // 先把上一次进程认识的所有飞书线程接回 watcher，后台任务在离线期间的回执也能补发。
     const state = await readFeishuState(this.#runtime.harness, ctx);
+    const inspection = await this.#runtime.harness.inspect(ctx);
     for (const [threadKey, record] of Object.entries(state.threads)) {
       const conversation = await this.#runtime.harness.conversation(
         record.conversationId as ConversationId,
         ctx,
       );
-      if (conversation !== undefined) this.#watch(threadKey, conversation, record);
+      if (conversation === undefined) continue;
+      this.#watch(threadKey, conversation, record);
+      if (inspection.tasks.some((task) => task.record.conversationId === conversation.id)) {
+        this.#startProgress(threadKey, conversation.id, record.rootMessageId);
+      }
     }
 
     const dispatcher = new lark.EventDispatcher({
@@ -105,6 +119,8 @@ export class FeishuSurface {
   async stop(): Promise<void> {
     this.#closed = true;
     this.#ws?.close({ force: true });
+    for (const timer of this.#progress.values()) clearInterval(timer);
+    this.#progress.clear();
     for (const stop of this.#watchers.values()) {
       try {
         await stop();
@@ -113,6 +129,50 @@ export class FeishuSurface {
       }
     }
     this.#watchers.clear();
+  }
+
+  /** 每两分钟看一次：还有活任务就回一句进度，空了就停。 */
+  #startProgress(threadKey: string, conversationId: ConversationId, rootMessageId: string): void {
+    if (this.#closed || this.#progress.has(threadKey)) return;
+    const timer = setInterval(() => {
+      void this.#postProgress(threadKey, conversationId, rootMessageId);
+    }, PROGRESS_MS);
+    timer.unref();
+    this.#progress.set(threadKey, timer);
+  }
+
+  #stopProgress(threadKey: string): void {
+    const timer = this.#progress.get(threadKey);
+    if (timer !== undefined) {
+      clearInterval(timer);
+      this.#progress.delete(threadKey);
+    }
+  }
+
+  async #postProgress(
+    threadKey: string,
+    conversationId: ConversationId,
+    rootMessageId: string,
+  ): Promise<void> {
+    if (this.#closed) return;
+    try {
+      const inspection = await this.#runtime.harness.inspect(ctx);
+      const tasks = inspection.tasks.filter(
+        (task) => task.record.conversationId === conversationId,
+      );
+      if (tasks.length === 0) {
+        this.#stopProgress(threadKey);
+        return;
+      }
+
+      const startedAt = Math.min(...tasks.map((task) => task.record.startedAt ?? Date.now()));
+      const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+      const live = await this.#runtime.harness.snapshot(LiveDoc, conversationId, ctx);
+      const line = progressLine(live, tasks.map((task) => task.record.kind), elapsed);
+      await this.#transport.replyText(rootMessageId, line, `da-progress-${conversationId}-${elapsed}`);
+    } catch (error) {
+      this.#logger.error("飞书进度推送失败", error);
+    }
   }
 
   async #onEvent(event: FeishuEvent): Promise<void> {
@@ -169,6 +229,7 @@ export class FeishuSurface {
 
       const record = await this.#ensureThread(parsed.threadKey, parsed, conversation);
       this.#watch(parsed.threadKey, conversation, record);
+      this.#startProgress(parsed.threadKey, conversation.id, record.rootMessageId);
 
       // 先回执，再下载附件、跑模型；长任务期间用户不会觉得消息丢了。
       const pending = parsed.attachments.length > 0 ? `，收到 ${parsed.attachments.length} 个附件` : "";

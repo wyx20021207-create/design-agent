@@ -6,6 +6,7 @@
  *   npm run feishu
  */
 import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
+import type { LiveState } from "@earendil-works/pi-durable";
 
 import { loadSettings } from "../src/config.ts";
 import type { DeliveryAdapter, DeliveryBatch, DeliveryOutcome } from "../src/delivery/adapter.ts";
@@ -14,6 +15,7 @@ import type { FeishuTransport } from "../src/feishu/client.ts";
 import { FeishuDeliveryAdapter } from "../src/feishu/delivery.ts";
 import { parseEvent, threadKeyOf, type FeishuEvent } from "../src/feishu/events.ts";
 import { toCardMarkdown } from "../src/feishu/markdown.ts";
+import { progressLine } from "../src/feishu/progress.ts";
 import {
   advanceFeishuThread,
   feishuTargetForConversation,
@@ -124,6 +126,18 @@ check(!converted.includes("|---|"), "表格分隔行没有去掉");
 
 const fenced = toCardMarkdown("```bash\n# 不是标题\n```");
 check(fenced.includes("# 不是标题"), "代码块里的内容被改了");
+
+check(
+  progressLine(undefined, ["render"], 4) === "还在处理（已 4 分钟）：后台任务运行中。",
+  "后台任务的进度文案不对",
+);
+const live = {
+  run: { taskId: 1, inputs: [], turns: 3 },
+  tools: [{ callId: "call-1", name: "read", status: "running" }],
+} as unknown as LiveState;
+const liveLine = progressLine(live, ["pi.generation"], 2);
+check(liveLine.includes("正在执行 read") && liveLine.includes("第 3 轮"), `进度文案不对：${liveLine}`);
+check(progressLine(undefined, [], 1).includes("任务仍在运行"), "空闲文案不对");
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 check(sniffImageExtension(png) === ".png", "PNG 魔数识别失败");
