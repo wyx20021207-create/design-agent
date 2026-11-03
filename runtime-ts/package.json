@@ -23,6 +23,7 @@
     "feishu": "tsx test/feishu.ts",
     "tools": "tsx test/tools.ts",
     "skills": "tsx test/skills-matrix.ts",
+    "subagents": "tsx test/subagents.ts",
     "prune": "node scripts/prune-sandboxes.mjs",
     "prune:volumes": "node scripts/prune-sandboxes.mjs --volumes",
     "prune:dry": "node scripts/prune-sandboxes.mjs --dry-run --volumes"

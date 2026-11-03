@@ -145,7 +145,7 @@ export function createServer(runtime: Runtime, options: ServerOptions = {}): Fas
 
   app.post<{
     Params: { id: string };
-    Body: { text: string; requestId?: string; wait?: boolean };
+    Body: { text: string; requestId?: string; wait?: boolean; steer?: boolean };
   }>(
     "/threads/:id/messages",
     {
@@ -158,6 +158,7 @@ export function createServer(runtime: Runtime, options: ServerOptions = {}): Fas
             text: { type: "string", minLength: 1, maxLength: 20_000 },
             requestId: { type: "string", minLength: 1, maxLength: 200 },
             wait: { type: "boolean" },
+            steer: { type: "boolean" },
           },
         },
       },
@@ -174,7 +175,12 @@ export function createServer(runtime: Runtime, options: ServerOptions = {}): Fas
 
       const requestId = request.body.requestId ?? randomUUID();
       const submission = await conversation.submit(
-        { type: "input", content: request.body.text, requestId },
+        {
+          type: "input",
+          content: request.body.text,
+          requestId,
+          ...(request.body.steer === true ? { whenBusy: "steer" as const } : {}),
+        },
         ctx,
       );
 

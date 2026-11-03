@@ -33,9 +33,11 @@ import { fetchAssetTool } from "../tools/fetch-asset.ts";
 import { createImageTool } from "../tools/image.ts";
 import { createMediaTools } from "../tools/media.ts";
 import { listProjectsTool, renderStatusTool } from "../tools/projects.ts";
+import { createDelegateTools } from "../tools/delegate.ts";
 import { RenderTask } from "./render-task.ts";
 import { startRenderTool } from "./render-tool.ts";
 import { loadSkillIndex, renderSkillIndex } from "./skills.ts";
+import { loadSubagentParents, registerSubagent } from "./subagents.ts";
 import { createUploadTool } from "./upload-tool.ts";
 
 const preamble = (skillIndex: string): string => `You are a design agent working on your own computer.
@@ -51,6 +53,9 @@ background, and sends you the result as a new message when it finishes. Keep wor
 
 When the person should receive files, call upload_files. It never sends the same file twice in
 this conversation, and a modified file is sent again.
+
+For an independent job, use delegate: the worker gets its own context but shares this workspace,
+so give it its own folders. For alternative directions, use parallel_looks.
 
 Skills:
 ${skillIndex}`;
@@ -94,6 +99,8 @@ export async function openRuntime(
 
   const clients = new Map<string, RpcClient>();
   const staged = new Set<string>();
+  /** 子代理的 conversation → 父 conversation；环境沿用父容器的卷。 */
+  const containerOf = new Map<string, string>();
 
   /** 容器 + staging + RPC 客户端；Harness 和飞书附件下载共用。 */
   const buildEnv = async (target: {
@@ -101,10 +108,11 @@ export async function openRuntime(
     cwd?: string;
   }): Promise<ExecutionEnv> => {
     const conversationId = String(target.conversationId);
-    const ref = ensureRunning(conversationId, containerOptions);
+    const owner = containerOf.get(conversationId) ?? conversationId;
+    const ref = ensureRunning(owner, containerOptions);
 
     if (!staged.has(ref.name)) {
-      await stageWorkspace(conversationId, containerOptions);
+      await stageWorkspace(owner, containerOptions);
       staged.add(ref.name);
     }
 
@@ -122,6 +130,14 @@ export async function openRuntime(
   const delivery =
     options.delivery ?? new LocalOutboxAdapter(join(settings.dataDir, "outbox"));
 
+  let openedHarness: Harness | undefined;
+  const registerChild = async (childId: ConversationId, parentId: ConversationId): Promise<void> => {
+    containerOf.set(String(childId), String(parentId));
+    if (openedHarness !== undefined) {
+      await registerSubagent(openedHarness, childId, parentId, context);
+    }
+  };
+
   const registry: Registry = createRegistry();
   registry.install(CodingTools);
   registry.install(
@@ -133,6 +149,7 @@ export async function openRuntime(
         fetchAssetTool,
         createImageTool(settings),
         ...createMediaTools(settings),
+        ...createDelegateTools(settings, () => openedHarness, registerChild),
         listProjectsTool,
         renderStatusTool,
       ],
@@ -154,6 +171,11 @@ export async function openRuntime(
     },
     context,
   );
+
+  openedHarness = harness;
+  for (const [child, parent] of await loadSubagentParents(harness, context)) {
+    containerOf.set(child, parent);
+  }
 
   const root = await harness.root(context, {
     agent: { model: settings.model },

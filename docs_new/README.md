@@ -47,8 +47,11 @@
     `generate_music` / `transcribe_audio`（ElevenLabs / Groq，密钥只在宿主机）、
     `list_recent_projects` / `get_render_status`
   - **技能矩阵**：`npm run skills` 检查 36 个技能的 front matter、脚本与宿主工具引用
+  - **子代理 / 并行 look**：`delegate` 建独立上下文子对话、共用父容器；`parallel_looks`
+    一次拉起 2-4 个方向；child → parent 映射存 `design.subagents` 文档，重启后仍共享容器
+  - **Steering**：飞书与 HTTP 在对话忙碌时用 `whenBusy:"steer"` 把补充要求并入当前 run
   - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
-- 下一步：端到端抽查 deck / 图表 / 视频技能，然后做子代理与进度/steering
+- 下一步：故障注入与恢复、长任务进度提示，然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 

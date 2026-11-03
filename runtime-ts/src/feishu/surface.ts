@@ -172,9 +172,12 @@ export class FeishuSurface {
 
       // 先回执，再下载附件、跑模型；长任务期间用户不会觉得消息丢了。
       const pending = parsed.attachments.length > 0 ? `，收到 ${parsed.attachments.length} 个附件` : "";
+      const busy = (await this.#runtime.harness.inspect(ctx)).tasks.some(
+        (task) => task.record.conversationId === conversation.id,
+      );
       await this.#transport.replyText(
         parsed.replyTo,
-        `已收到${pending}。开始处理……`,
+        busy ? `已收到${pending}，转给正在运行的任务……` : `已收到${pending}。开始处理……`,
         `da-ack-${parsed.messageId}`,
       );
 
@@ -198,7 +201,10 @@ export class FeishuSurface {
       const content = blocks.join("\n\n").trim();
       if (content.length === 0) return;
 
-      await conversation.submit({ type: "input", content, requestId: parsed.messageId }, ctx);
+      await conversation.submit(
+        { type: "input", content, requestId: parsed.messageId, whenBusy: "steer" },
+        ctx,
+      );
       await markFeishuMessageSeen(this.#runtime.harness, parsed.messageId, ctx);
     } catch (error) {
       this.#logger.error("处理飞书事件失败", error);
