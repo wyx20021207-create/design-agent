@@ -1,0 +1,117 @@
+/**
+ * 打开 Harness：SQLite 存储、模型、工具、每个会话一个容器。
+ *
+ * 这里就是"Agent 循环与沙箱执行分离"的落点：
+ * Harness 在宿主机跑，工具通过 ExecutionEnv 伸进容器。
+ */
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
+import { createModels } from "@earendil-works/pi-ai/models";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
+import {
+  Harness,
+  createRegistry,
+  defineExtension,
+  section,
+  type Conversation,
+  type Registry,
+} from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { CodingTools } from "@earendil-works/pi-durable/tools";
+
+import type { Settings } from "../config.ts";
+import { ensureRunning, type ContainerOptions } from "../env/container.ts";
+import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
+import { RpcClient } from "../env/rpc.ts";
+import { stageWorkspace } from "../staging/stage.ts";
+
+const PREAMBLE = `You are a design agent working on your own computer.
+Your computer is a Linux sandbox at /workspace: brand packs under /workspace/brand,
+skills under /workspace/skills, deterministic render and gate scripts under /workspace/tools,
+and your own work under /workspace/projects.
+Read a skill before following it. Run the gates before you deliver.`;
+
+export interface Runtime {
+  settings: Settings;
+  harness: Harness;
+  root: Conversation;
+  close(): Promise<void>;
+}
+
+export async function openRuntime(
+  settings: Settings,
+  context: Context = BACKGROUND_CONTEXT,
+): Promise<Runtime> {
+  if (settings.apiKey === undefined) {
+    throw new Error("OPENCODE_API_KEY 未设置：在仓库根目录的 .env 里写一行，或导出环境变量");
+  }
+
+  mkdirSync(settings.dataDir, { recursive: true });
+  const storage = await openNodeSqliteStorage(join(settings.dataDir, "design-agent.sqlite"));
+
+  const models = createModels();
+  models.setProvider(opencodeGoProvider());
+
+  const containerOptions: ContainerOptions & { root: string } = {
+    image: process.env["DESIGN_AGENT_SANDBOX_IMAGE"] ?? "design-agent-sandbox:local",
+    mountDir: settings.runtimeDir,
+    root: settings.root,
+  };
+
+  const clients = new Map<string, RpcClient>();
+  const staged = new Set<string>();
+
+  const registry: Registry = createRegistry();
+  registry.install(CodingTools);
+  registry.install(
+    defineExtension({
+      name: "design-agent",
+      sections: [section("preamble", () => PREAMBLE, { tag: false })],
+    }),
+  );
+
+  const harness = await Harness.open(
+    storage,
+    {
+      models,
+      registry,
+      env: async (target) => {
+        const conversationId = String(target.conversationId);
+        const ref = ensureRunning(conversationId, containerOptions);
+
+        if (!staged.has(ref.name)) {
+          await stageWorkspace(conversationId, containerOptions);
+          staged.add(ref.name);
+        }
+
+        let client = clients.get(ref.name);
+        if (client === undefined) {
+          client = RpcClient.docker(ref.name);
+          clients.set(ref.name, client);
+        }
+        return new DockerExecutionEnv(client, {
+          id: ref.name,
+          cwd: target.cwd ?? "/workspace",
+        });
+      },
+    },
+    context,
+  );
+
+  const root = await harness.root(context, {
+    agent: { model: settings.model },
+  });
+  harness.resume();
+
+  return {
+    settings,
+    harness,
+    root,
+    close: async () => {
+      for (const client of clients.values()) client.close();
+      await harness.close(context);
+    },
+  };
+}

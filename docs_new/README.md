@@ -20,7 +20,10 @@
     root 所有、只读，agent 写入被拒
   - **容器生命周期**：conversation id → 容器名 + 卷名（sha256 前 16 位）
   - **会话隔离**：两个 conversation 的容器互不可见
-- 下一步：第 3 周，CLI + Harness + 模型 + SQLite
+  - **Harness + 模型 + CLI**：SQLite 存储、OpenCode Go（deepseek-v4.1-flash）、
+    CodingTools 经 ExecutionEnv 进容器；`ask` 一句话即可让模型在容器里跑命令，
+    重启进程后对话继续
+- 下一步：任务（RenderTask + Reporter）、交付幂等，然后入口层
 
 ## 与 `docs/` 的关系
 
