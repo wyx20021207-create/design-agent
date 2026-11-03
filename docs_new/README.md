@@ -27,7 +27,10 @@
     design-wiki，写 BRIEF、渲染 1200×627、跑 brand-lint / artifact-contract /
     text-fidelity / review-thumb，并按看图结果改了两处
   - agent 目录归属：projects / attachments / references / .renders 交给 uid 1000
-- 下一步：任务（RenderTask + Reporter）、交付幂等，然后入口层
+  - **异步 ReAct**：`start_render` 立刻返回 taskId；`RenderTask` 在后台跑命令、
+    检查产物、写完成标记，再把回执作为一条输入投放回对话，唤醒模型开新一轮 run。
+    崩溃后从最后一个 checkpoint 重跑，完成标记让重跑跳过已完成的工作
+- 下一步：故障注入（kill -9 后从检查点恢复）、交付幂等，然后入口层
 
 ## 与 `docs/` 的关系
 

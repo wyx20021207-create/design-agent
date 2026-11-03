@@ -26,6 +26,8 @@ import { ensureRunning, type ContainerOptions } from "../env/container.ts";
 import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
 import { RpcClient } from "../env/rpc.ts";
 import { stageWorkspace } from "../staging/stage.ts";
+import { RenderTask } from "./render-task.ts";
+import { startRenderTool } from "./render-tool.ts";
 import { loadSkillIndex, renderSkillIndex } from "./skills.ts";
 
 const preamble = (skillIndex: string): string => `You are a design agent working on your own computer.
@@ -35,6 +37,9 @@ and your own work under /workspace/projects.
 
 Read the matching skill before you start: /workspace/skills/<name>/SKILL.md.
 Run the gates in /workspace/tools before you call anything finished.
+
+Long renders go through start_render, not bash: it returns immediately, keeps running in the
+background, and sends you the result as a new message when it finishes. Keep working while it runs.
 
 Skills:
 ${skillIndex}`;
@@ -76,6 +81,8 @@ export async function openRuntime(
   registry.install(
     defineExtension({
       name: "design-agent",
+      tools: [startRenderTool],
+      tasks: [RenderTask],
       sections: [
         section("preamble", () => preamble(renderSkillIndex(loadSkillIndex(settings.root))), {
           tag: false,
