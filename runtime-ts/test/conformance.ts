@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
 
-import { ensureContainer } from "../src/env/container.ts";
+import { ensureRunning } from "../src/env/container.ts";
 import { DockerExecutionEnv } from "../src/env/docker-execution-env.ts";
 import { RpcClient } from "../src/env/rpc.ts";
 
@@ -60,9 +60,9 @@ const assertions = {
 };
 
 const withEnv = async (use: (env: DockerExecutionEnv) => Promise<void>): Promise<void> => {
-  ensureContainer(SPEC);
+  const ref = ensureRunning(SPEC.conversationId, SPEC);
 
-  const bootstrap = RpcClient.docker(SPEC.name);
+  const bootstrap = RpcClient.docker(ref.name);
   const directory = `/tmp/conformance-${randomUUID()}`;
 
   const created = await bootstrap.call("createDir", [directory, { recursive: true }]).catch(() => {
@@ -70,8 +70,8 @@ const withEnv = async (use: (env: DockerExecutionEnv) => Promise<void>): Promise
   });
   assert.ok(created === undefined || typeof created === "object");
 
-  const rpc = RpcClient.docker(SPEC.name, { cwd: directory });
-  const env = new DockerExecutionEnv(rpc, { id: `${SPEC.name}:${directory}`, cwd: directory });
+  const rpc = RpcClient.docker(ref.name, { cwd: directory });
+  const env = new DockerExecutionEnv(rpc, { id: `${ref.name}:${directory}`, cwd: directory });
 
   try {
     await use(env);

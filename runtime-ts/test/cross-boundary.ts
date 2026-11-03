@@ -5,7 +5,7 @@
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 
-import { ensureContainer } from "../src/env/container.ts";
+import { ensureRunning } from "../src/env/container.ts";
 import { DockerExecutionEnv } from "../src/env/docker-execution-env.ts";
 import { RpcClient } from "../src/env/rpc.ts";
 
@@ -13,11 +13,11 @@ import { SPIKE as SPEC } from "./spike.ts";
 
 const ctx = BACKGROUND_CONTEXT;
 
-ensureContainer(SPEC);
+const ref = ensureRunning(SPEC.conversationId, SPEC);
 console.log("容器就绪");
 
-const rpc = RpcClient.docker(SPEC.name);
-const env = new DockerExecutionEnv(rpc, { id: SPEC.name });
+const rpc = RpcClient.docker(ref.name);
+const env = new DockerExecutionEnv(rpc, { id: ref.name });
 
 try {
   const written = await env.writeFile("/workspace/hello.txt", "来自宿主机的问候\n", ctx);

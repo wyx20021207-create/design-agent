@@ -15,9 +15,12 @@
   - 冒烟测试：本机 `NodeExecutionEnv` 的 `readTextFile` / `listDir` / `exec`
   - 容器内 `pi-env-server.mjs`（NDJSON 协议，全部方法 + 句柄 + exec 流式 + abort）
   - 宿主机 `RpcClient` + `DockerExecutionEnv`（完整 `ExecutionEnv` 接口）
-  - 跨边界调用跑通：写文件 → 读回 → 列目录 → exec 流式输出 → 错误码
   - **官方 conformance 24/24 通过**
-- 下一步：staging（品牌 / 技能 / 脚本 / 字体），然后进入容器生命周期与两会话隔离
+  - **staging**：865 个文件（36 技能 / 14 脚本 / 品牌包 / 4 字体），digest 未变则跳过；
+    root 所有、只读，agent 写入被拒
+  - **容器生命周期**：conversation id → 容器名 + 卷名（sha256 前 16 位）
+  - **会话隔离**：两个 conversation 的容器互不可见
+- 下一步：第 3 周，CLI + Harness + 模型 + SQLite
 
 ## 与 `docs/` 的关系
 
