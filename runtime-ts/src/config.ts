@@ -28,6 +28,12 @@ export interface Settings {
   dataDir: string;
   model: { provider: "opencode-go"; modelId: string };
   apiKey: string | undefined;
+  /** 宿主工具凭据；只在宿主机使用，绝不进容器。 */
+  openaiApiKey: string | undefined;
+  openaiBaseUrl: string;
+  imageModel: string;
+  elevenlabsApiKey: string | undefined;
+  groqApiKey: string | undefined;
   feishu: FeishuSettings;
 }
 
@@ -75,6 +81,11 @@ export function loadSettings(): Settings {
       modelId: process.env["DESIGN_AGENT_MODEL_ID"] ?? DEFAULT_MODEL,
     },
     apiKey: process.env["OPENCODE_API_KEY"],
+    openaiApiKey: process.env["OPENAI_API_KEY"],
+    openaiBaseUrl: process.env["OPENAI_BASE_URL"] ?? "https://api.openai.com/v1",
+    imageModel: process.env["DESIGN_AGENT_IMAGE_MODEL"] ?? "gpt-image-2.5-flare",
+    elevenlabsApiKey: process.env["ELEVENLABS_API_KEY"],
+    groqApiKey: process.env["GROQ_API_KEY"],
     feishu: {
       appId: process.env["FEISHU_APP_ID"],
       appSecret: process.env["FEISHU_APP_SECRET"],

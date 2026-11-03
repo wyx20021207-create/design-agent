@@ -42,8 +42,13 @@
   - **飞书交互**：Markdown 回复转互动卡片（标题→加粗、表格→列表、长文拆卡）；入站
     图片/文件下载到 `/workspace/attachments/`；收到即回执；超过 5 分钟的补投事件
     不执行；每条事件记日志
+  - **宿主工具**：`fetch_asset`（SSRF 校验、重定向复检、50 MB）、`generate_image`
+    （OpenAI 兼容接口、alpha 报告）、`generate_voiceover` / `generate_sound_effect` /
+    `generate_music` / `transcribe_audio`（ElevenLabs / Groq，密钥只在宿主机）、
+    `list_recent_projects` / `get_render_status`
+  - **技能矩阵**：`npm run skills` 检查 36 个技能的 front matter、脚本与宿主工具引用
   - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
-- 下一步：飞书进度提示与 steering、宿主工具（`fetch_asset` / `generate_image` / 媒体），然后删除 Python 运行时
+- 下一步：端到端抽查 deck / 图表 / 视频技能，然后做子代理与进度/steering
 
 ## 与 `docs/` 的关系
 

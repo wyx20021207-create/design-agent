@@ -21,6 +21,8 @@
     "delivery": "tsx test/delivery.ts",
     "api": "tsx test/api.ts",
     "feishu": "tsx test/feishu.ts",
+    "tools": "tsx test/tools.ts",
+    "skills": "tsx test/skills-matrix.ts",
     "prune": "node scripts/prune-sandboxes.mjs",
     "prune:volumes": "node scripts/prune-sandboxes.mjs --volumes",
     "prune:dry": "node scripts/prune-sandboxes.mjs --dry-run --volumes"

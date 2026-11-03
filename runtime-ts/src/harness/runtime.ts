@@ -29,6 +29,10 @@ import { ensureRunning, type ContainerOptions } from "../env/container.ts";
 import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
 import { RpcClient } from "../env/rpc.ts";
 import { stageWorkspace } from "../staging/stage.ts";
+import { fetchAssetTool } from "../tools/fetch-asset.ts";
+import { createImageTool } from "../tools/image.ts";
+import { createMediaTools } from "../tools/media.ts";
+import { listProjectsTool, renderStatusTool } from "../tools/projects.ts";
 import { RenderTask } from "./render-task.ts";
 import { startRenderTool } from "./render-tool.ts";
 import { loadSkillIndex, renderSkillIndex } from "./skills.ts";
@@ -123,7 +127,15 @@ export async function openRuntime(
   registry.install(
     defineExtension({
       name: "design-agent",
-      tools: [startRenderTool, createUploadTool(delivery)],
+      tools: [
+        startRenderTool,
+        createUploadTool(delivery),
+        fetchAssetTool,
+        createImageTool(settings),
+        ...createMediaTools(settings),
+        listProjectsTool,
+        renderStatusTool,
+      ],
       tasks: [RenderTask],
       sections: [
         section("preamble", () => preamble(renderSkillIndex(loadSkillIndex(settings.root))), {
