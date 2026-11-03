@@ -19,6 +19,15 @@ export interface FeishuSettings {
   botName: string;
 }
 
+export type ModelRef = { provider: "opencode-go"; modelId: string };
+
+/** lead 与 worker 的模型；provider 目前只有 OpenCode Go。 */
+export interface WorkerModels {
+  low: ModelRef;
+  xhigh: ModelRef;
+  max: ModelRef;
+}
+
 export interface Settings {
   /** 仓库根目录：技能、脚本、示例品牌的来源。 */
   root: string;
@@ -26,7 +35,11 @@ export interface Settings {
   runtimeDir: string;
   /** SQLite 与其它持久化文件。 */
   dataDir: string;
-  model: { provider: "opencode-go"; modelId: string };
+  model: ModelRef;
+  /** worker 分档模型；未配置的档位回落到 DESIGN_AGENT_WORKER_MODEL_ID 或 lead。 */
+  workerModels: WorkerModels;
+  /** parallel_looks 使用的模型。 */
+  lookModel: ModelRef;
   apiKey: string | undefined;
   /** 宿主工具凭据；只在宿主机使用，绝不进容器。 */
   openaiApiKey: string | undefined;
@@ -72,14 +85,21 @@ export function loadSettings(): Settings {
 
   loadEnvFile(join(root, ".env"));
 
+  const model = (modelId: string): ModelRef => ({ provider: "opencode-go", modelId });
+  const lead = model(process.env["DESIGN_AGENT_MODEL_ID"] ?? DEFAULT_MODEL);
+  const worker = process.env["DESIGN_AGENT_WORKER_MODEL_ID"] ?? lead.modelId;
+
   return {
     root,
     runtimeDir,
     dataDir: join(runtimeDir, "data"),
-    model: {
-      provider: "opencode-go",
-      modelId: process.env["DESIGN_AGENT_MODEL_ID"] ?? DEFAULT_MODEL,
+    model: lead,
+    workerModels: {
+      low: model(process.env["DESIGN_AGENT_WORKER_MODEL_LOW"] ?? worker),
+      xhigh: model(process.env["DESIGN_AGENT_WORKER_MODEL_XHIGH"] ?? worker),
+      max: model(process.env["DESIGN_AGENT_WORKER_MODEL_MAX"] ?? worker),
     },
+    lookModel: model(process.env["DESIGN_AGENT_LOOK_MODEL_ID"] ?? worker),
     apiKey: process.env["OPENCODE_API_KEY"],
     openaiApiKey: process.env["OPENAI_API_KEY"],
     openaiBaseUrl: process.env["OPENAI_BASE_URL"] ?? "https://api.openai.com/v1",

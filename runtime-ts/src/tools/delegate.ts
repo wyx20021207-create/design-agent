@@ -6,9 +6,9 @@
  */
 import type { Context } from "@earendil-works/chord/context";
 import { defineTool, type ConversationId, type Harness } from "@earendil-works/pi-durable";
-import { arr, num, obj, opt, str } from "@earendil-works/pi-schema";
+import { arr, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 
-import type { Settings } from "../config.ts";
+import type { ModelRef, Settings } from "../config.ts";
 import { runChild } from "../harness/subagents.ts";
 
 const MAX_LOOKS = 4;
@@ -16,6 +16,30 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
 const text = (message: string) => [{ type: "text" as const, text: message }];
 const fail = (message: string) => ({ output: text(message), isError: true });
+
+export type WorkerEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+/** low 用低档模型，max 用高档，其余落在 xhigh。 */
+export function workerModelFor(settings: Settings, effort: WorkerEffort): ModelRef {
+  if (effort === "low") return settings.workerModels.low;
+  if (effort === "max") return settings.workerModels.max;
+  return settings.workerModels.xhigh;
+}
+
+export function workerTimeoutSeconds(effort: WorkerEffort): number {
+  switch (effort) {
+    case "low":
+      return 600;
+    case "medium":
+      return 1_200;
+    case "high":
+      return 1_800;
+    case "xhigh":
+      return 1_800;
+    case "max":
+      return 2_700;
+  }
+}
 
 export type GetHarness = () => Harness | undefined;
 export type RegisterChild = (
@@ -43,17 +67,24 @@ export function createDelegateTools(
           "which skills and gates to use, and what to return.",
       }),
       role: opt(str({ description: "Optional role such as builder, critic or analyst." })),
-      timeout_seconds: opt(num({ description: "Worker timeout in seconds, 60 to 3600. Default 1200." })),
+      effort: opt(
+        oneOf(["low", "medium", "high", "xhigh", "max"], {
+          description: "Worker tier: low uses the cheap model, max the strongest. Default xhigh.",
+        }),
+      ),
+      timeout_seconds: opt(num({ description: "Worker timeout in seconds, 60 to 3600. Default depends on effort." })),
     }),
 
     async execute(args, api, context: Context) {
       const harness = getHarness();
       if (harness === undefined) return fail("delegation unavailable: the harness is not ready.");
-      const timeoutMs = Math.max(60, Math.min(args.timeout_seconds ?? 1_200, 3_600)) * 1_000;
+      const effort = args.effort ?? "xhigh";
+      const timeoutSeconds = args.timeout_seconds ?? workerTimeoutSeconds(effort);
+      const timeoutMs = Math.max(60, Math.min(timeoutSeconds, 3_600)) * 1_000;
 
       const result = await runChild({
         harness,
-        settings,
+        model: workerModelFor(settings, effort),
         parentConversationId: api.conversationId,
         brief: args.brief,
         role: args.role,
@@ -108,7 +139,7 @@ export function createDelegateTools(
         ].join("\n");
         return runChild({
           harness,
-          settings,
+          model: settings.lookModel,
           parentConversationId: api.conversationId,
           brief,
           role: "builder",

@@ -52,10 +52,14 @@
   - **子代理 / 并行 look**：`delegate` 建独立上下文子对话、共用父容器；`parallel_looks`
     一次拉起 2-4 个方向；child → parent 映射存 `design.subagents` 文档，重启后仍共享容器
   - **Steering**：飞书与 HTTP 在对话忙碌时用 `whenBusy:"steer"` 把补充要求并入当前 run
+  - **worker 分档**：`delegate(effort)` 的 low → `DESIGN_AGENT_WORKER_MODEL_LOW`，
+    max → `DESIGN_AGENT_WORKER_MODEL_MAX`，其余档位 → `DESIGN_AGENT_WORKER_MODEL_XHIGH`；
+    未配置回落到 `DESIGN_AGENT_WORKER_MODEL_ID` 或 lead；超时按档位
+    600/1200/1800/1800/2700 秒；`parallel_looks` 用 `DESIGN_AGENT_LOOK_MODEL_ID`
   - **长任务进度**：飞书每 5 分钟回一条“还在处理（已 N 分钟）：正在执行 X；第 N 轮；
     后台任务运行中”，空闲自动停；`DESIGN_AGENT_PROGRESS_MS` 可调
   - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
-- 下一步：worker 分档模型、技能端到端抽查，然后删除 Python 运行时
+- 下一步：技能端到端抽查（deck / 图表 / 视频），然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 

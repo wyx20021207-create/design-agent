@@ -13,7 +13,7 @@ import {
   type Harness,
 } from "@earendil-works/pi-durable";
 
-import type { Settings } from "../config.ts";
+import type { ModelRef } from "../config.ts";
 import { messageText } from "../text.ts";
 
 export type SubagentValue = {
@@ -66,7 +66,7 @@ export type ChildResult =
 
 export interface RunChildOptions {
   readonly harness: Harness;
-  readonly settings: Settings;
+  readonly model: ModelRef;
   readonly parentConversationId: ConversationId;
   readonly brief: string;
   readonly role?: string | undefined;
@@ -82,7 +82,7 @@ const DEFAULT_CHILD_TIMEOUT_MS = 20 * 60 * 1_000;
 export async function runChild(options: RunChildOptions): Promise<ChildResult> {
   const context = options.context ?? ctx;
   const child = await options.harness.createConversation(
-    { ownership: { kind: "ownerless" }, agent: { model: options.settings.model } },
+    { ownership: { kind: "ownerless" }, agent: { model: options.model } },
     context,
   );
   await options.register(child.id, options.parentConversationId);

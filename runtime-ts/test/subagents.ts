@@ -12,12 +12,32 @@ import { loadSettings } from "../src/config.ts";
 import { openRuntime } from "../src/harness/runtime.ts";
 import { SubagentDoc } from "../src/harness/subagents.ts";
 import { messageText } from "../src/text.ts";
+import { workerModelFor, workerTimeoutSeconds } from "../src/tools/delegate.ts";
 
 function check(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
 const settings = loadSettings();
+const custom = {
+  ...settings,
+  workerModels: {
+    low: { provider: "opencode-go" as const, modelId: "low-model" },
+    xhigh: { provider: "opencode-go" as const, modelId: "xhigh-model" },
+    max: { provider: "opencode-go" as const, modelId: "max-model" },
+  },
+};
+check(workerModelFor(custom, "low").modelId === "low-model", "low 档模型不对");
+check(workerModelFor(custom, "medium").modelId === "xhigh-model", "medium 应落到 xhigh");
+check(workerModelFor(custom, "max").modelId === "max-model", "max 档模型不对");
+check(
+  workerTimeoutSeconds("low") === 600 &&
+    workerTimeoutSeconds("xhigh") === 1_800 &&
+    workerTimeoutSeconds("max") === 2_700,
+  "worker 超时不对",
+);
+console.log("worker 分档：low / medium / max + 超时  OK");
+
 const runtime = await openRuntime(settings);
 
 try {
