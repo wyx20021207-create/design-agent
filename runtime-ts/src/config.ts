@@ -10,6 +10,15 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_MODEL = "deepseek-v4.1-flash";
 
+export interface FeishuSettings {
+  appId: string | undefined;
+  appSecret: string | undefined;
+  encryptKey: string | undefined;
+  verificationToken: string | undefined;
+  /** @ 提及默认显示的应用名；只用于日志与提示。 */
+  botName: string;
+}
+
 export interface Settings {
   /** 仓库根目录：技能、脚本、示例品牌的来源。 */
   root: string;
@@ -19,6 +28,7 @@ export interface Settings {
   dataDir: string;
   model: { provider: "opencode-go"; modelId: string };
   apiKey: string | undefined;
+  feishu: FeishuSettings;
 }
 
 /** 读 `.env`，只填还没有值的变量。返回读到的键名，便于打印来源。 */
@@ -65,5 +75,12 @@ export function loadSettings(): Settings {
       modelId: process.env["DESIGN_AGENT_MODEL_ID"] ?? DEFAULT_MODEL,
     },
     apiKey: process.env["OPENCODE_API_KEY"],
+    feishu: {
+      appId: process.env["FEISHU_APP_ID"],
+      appSecret: process.env["FEISHU_APP_SECRET"],
+      encryptKey: process.env["FEISHU_ENCRYPT_KEY"],
+      verificationToken: process.env["FEISHU_VERIFICATION_TOKEN"],
+      botName: process.env["FEISHU_BOT_NAME"] ?? "Design Agent",
+    },
   };
 }

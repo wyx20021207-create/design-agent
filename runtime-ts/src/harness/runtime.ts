@@ -22,7 +22,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import type { Settings } from "../config.ts";
-import { LocalOutboxAdapter } from "../delivery/adapter.ts";
+import { LocalOutboxAdapter, type DeliveryAdapter } from "../delivery/adapter.ts";
 import { ensureRunning, type ContainerOptions } from "../env/container.ts";
 import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
 import { RpcClient } from "../env/rpc.ts";
@@ -58,9 +58,15 @@ export interface Runtime {
   close(): Promise<void>;
 }
 
+export interface RuntimeOptions {
+  /** 覆盖默认的本地 outbox；飞书入口会注入一个会同时上传到群的适配器。 */
+  delivery?: DeliveryAdapter;
+}
+
 export async function openRuntime(
   settings: Settings,
   context: Context = BACKGROUND_CONTEXT,
+  options: RuntimeOptions = {},
 ): Promise<Runtime> {
   if (settings.apiKey === undefined) {
     throw new Error("OPENCODE_API_KEY 未设置：在仓库根目录的 .env 里写一行，或导出环境变量");
@@ -81,12 +87,15 @@ export async function openRuntime(
   const clients = new Map<string, RpcClient>();
   const staged = new Set<string>();
 
+  const delivery =
+    options.delivery ?? new LocalOutboxAdapter(join(settings.dataDir, "outbox"));
+
   const registry: Registry = createRegistry();
   registry.install(CodingTools);
   registry.install(
     defineExtension({
       name: "design-agent",
-      tools: [startRenderTool, createUploadTool(new LocalOutboxAdapter(join(settings.dataDir, "outbox")))],
+      tools: [startRenderTool, createUploadTool(delivery)],
       tasks: [RenderTask],
       sections: [
         section("preamble", () => preamble(renderSkillIndex(loadSkillIndex(settings.root))), {

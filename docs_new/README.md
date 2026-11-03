@@ -36,7 +36,11 @@
   - **入口层**：Fastify HTTP API（`POST /threads/:id/messages`、`GET /threads/:id/events`
     SSE、线程状态、outbox 文件下载），Bearer token 鉴权，`requestId` 去重，外部线程
     id 通过 Session 级文档映射到 Pi conversation；`npm run serve` 启动常驻进程
-- 下一步：飞书 webhook（requestId 去重、线程映射）、附件上传，然后删除 Python 运行时
+  - **飞书入口**：长连接（WebSocket）接收 `im.message.receive_v1`；`event_id` 作为
+    requestId 去重；群/话题/私聊映射成外部线程键；回答与 `task.report` 经 watcher
+    回到根消息；`upload_files` 把图片/文件上传到同一线程；线程状态持久化，重启后续推
+  - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
+- 下一步：飞书回复改用互动卡片（Markdown 渲染 + 表格转列表）、附件上传，然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 
