@@ -58,8 +58,11 @@
     600/1200/1800/1800/2700 秒；`parallel_looks` 用 `DESIGN_AGENT_LOOK_MODEL_ID`
   - **长任务进度**：飞书每 5 分钟回一条“还在处理（已 N 分钟）：正在执行 X；第 N 轮；
     后台任务运行中”，空闲自动停；`DESIGN_AGENT_PROGRESS_MS` 可调
+  - **技能端到端**：`npm run skills-e2e -- chart|deck|video` 用真实模型跑最小任务；
+    chart（viz.mjs 门禁 + 调色板/字体审计）、deck（brand-lint + html2pdf）、
+    video（hyperframes check/render + video-gate/video-score/artifact-contract）均通过
   - **沙箱清理**：`npm run prune` / `prune:volumes`，跳过有活跃 exec 的容器
-- 下一步：技能端到端抽查（deck / 图表 / 视频），然后删除 Python 运行时
+- 下一步：删除 Python 运行时 + 文档收尾
 
 ## 与 `docs/` 的关系
 
