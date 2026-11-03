@@ -3,16 +3,26 @@
  */
 import * as lark from "@larksuiteoapi/node-sdk";
 
+import { chunkMarkdown, toCardMarkdown } from "./markdown.ts";
+
 const MAX_TEXT = 3_500;
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 
 export interface FeishuTransport {
   /** 发文本，返回每条消息的 message_id。长文本会拆成多条。 */
   replyText(messageId: string, text: string, uuid: string): Promise<string[]>;
+  /** 发互动卡片；Markdown 会先转成卡片支持的子集，长内容拆成多张。 */
+  replyMarkdown(messageId: string, markdown: string, uuid: string): Promise<string[]>;
   replyImage(messageId: string, imageKey: string, uuid: string): Promise<string>;
   replyFile(messageId: string, fileKey: string, fileName: string, uuid: string): Promise<string>;
   uploadImage(bytes: Uint8Array): Promise<string>;
   uploadFile(bytes: Uint8Array, fileName: string): Promise<string>;
+  /** 下载消息里的图片或文件。 */
+  downloadResource(
+    messageId: string,
+    fileKey: string,
+    type: "image" | "file",
+  ): Promise<Uint8Array>;
 }
 
 /** 长文本按行切成若干段；没有合适的换行就硬切。 */
@@ -68,6 +78,43 @@ export class FeishuSdkTransport implements FeishuTransport {
       ids.push(response.data?.message_id ?? "-");
     }
     return ids;
+  }
+
+  async replyMarkdown(messageId: string, markdown: string, uuid: string): Promise<string[]> {
+    const chunks = chunkMarkdown(toCardMarkdown(markdown));
+    const ids: string[] = [];
+    for (const [index, chunk] of chunks.entries()) {
+      const card = {
+        config: { wide_screen_mode: true },
+        elements: [{ tag: "markdown", content: chunk }],
+      };
+      const response = await this.#client.im.v1.message.reply({
+        path: { message_id: messageId },
+        data: {
+          msg_type: "interactive",
+          content: JSON.stringify(card),
+          uuid: chunks.length === 1 ? uuid : `${uuid}-${index + 1}`,
+        },
+      });
+      ids.push(response.data?.message_id ?? "-");
+    }
+    return ids;
+  }
+
+  async downloadResource(
+    messageId: string,
+    fileKey: string,
+    type: "image" | "file",
+  ): Promise<Uint8Array> {
+    const resource = await this.#client.im.v1.messageResource.get({
+      path: { message_id: messageId, file_key: fileKey },
+      params: { type },
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of resource.getReadableStream()) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+    }
+    return Buffer.concat(chunks);
   }
 
   async replyImage(messageId: string, imageKey: string, uuid: string): Promise<string> {

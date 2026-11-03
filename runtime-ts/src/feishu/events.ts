@@ -20,6 +20,7 @@ export interface FeishuMessage {
   chat_type: string;
   message_type: string;
   content: string;
+  create_time?: string;
   mentions?: FeishuMention[];
 }
 
@@ -32,9 +33,18 @@ export interface FeishuEvent {
   message: FeishuMessage;
 }
 
+export type ParsedAttachment = {
+  readonly messageId: string;
+  readonly fileKey: string;
+  readonly type: "image" | "file";
+  readonly name?: string;
+};
+
 export type ParsedMessage = {
   readonly eventId: string;
   readonly messageId: string;
+  /** 飞书侧的消息创建时间（毫秒）；缺失时用当前时间。 */
+  readonly createdAt: number;
   /** 回复时使用的消息 id：线程根消息，顶层消息就是它自己。 */
   readonly replyTo: string;
   readonly chatId: string;
@@ -43,6 +53,7 @@ export type ParsedMessage = {
   readonly threadKey: string;
   readonly text: string;
   readonly mentionKeys: readonly string[];
+  readonly attachments: readonly ParsedAttachment[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -92,6 +103,53 @@ function stripMentions(text: string, mentions: readonly FeishuMention[]): string
   return result.replace(/[ \t]+\n/g, "\n").trim();
 }
 
+/** 图片、文件、音频、视频，以及富文本里内嵌的图片。 */
+function attachmentsOf(message: FeishuMessage): ParsedAttachment[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(message.content);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed)) return [];
+
+  const found: ParsedAttachment[] = [];
+  const add = (fileKey: unknown, type: "image" | "file", name?: unknown): void => {
+    if (typeof fileKey !== "string" || fileKey.length === 0) return;
+    found.push({
+      messageId: message.message_id,
+      fileKey,
+      type,
+      ...(typeof name === "string" && name.length > 0 ? { name } : {}),
+    });
+  };
+
+  switch (message.message_type) {
+    case "image":
+      add(parsed["image_key"], "image");
+      break;
+    case "file":
+    case "audio":
+    case "media":
+      add(parsed["file_key"], "file", parsed["file_name"]);
+      break;
+    case "post": {
+      const content = parsed["content"];
+      if (!Array.isArray(content)) break;
+      for (const row of content) {
+        if (!Array.isArray(row)) continue;
+        for (const element of row) {
+          if (isRecord(element) && element["tag"] === "img") add(element["image_key"], "image");
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return found;
+}
+
 export function threadKeyOf(message: FeishuMessage): string {
   if (message.chat_type === "p2p") return `feishu-p2p-${message.chat_id}`;
   if (message.thread_id !== undefined && message.thread_id.length > 0) {
@@ -105,22 +163,26 @@ export function threadKeyOf(message: FeishuMessage): string {
   return `feishu-${message.chat_id}-root-${root}`;
 }
 
-/** 机器人自己的消息、无法解析的内容返回 undefined。 */
+/** 机器人自己的消息返回 undefined；没有文字也没有附件的消息同样返回 undefined。 */
 export function parseEvent(event: FeishuEvent): ParsedMessage | undefined {
   if (event.sender.sender_type === "app") return undefined;
+  const attachments = attachmentsOf(event.message);
   const text = textOf(event.message);
-  if (text === undefined) return undefined;
+  if (text === undefined && attachments.length === 0) return undefined;
 
   const mentions = event.message.mentions ?? [];
+  const createdAt = Number(event.message.create_time);
   return {
     eventId: event.event_id ?? event.message.message_id,
     messageId: event.message.message_id,
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
     replyTo: event.message.root_id ?? event.message.message_id,
     chatId: event.message.chat_id,
     chatType: event.message.chat_type,
     senderOpenId: event.sender.sender_id?.open_id ?? "unknown",
     threadKey: threadKeyOf(event.message),
-    text: stripMentions(text, mentions),
+    text: stripMentions(text ?? "", mentions),
     mentionKeys: mentions.map((mention) => mention.key),
+    attachments,
   };
 }

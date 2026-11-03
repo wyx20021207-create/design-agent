@@ -16,8 +16,10 @@ import {
   defineExtension,
   section,
   type Conversation,
+  type ConversationId,
   type Registry,
 } from "@earendil-works/pi-durable";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 
@@ -55,6 +57,8 @@ export interface Runtime {
   root: Conversation;
   /** 新建一条对话，用于一次干净的任务。 */
   create(): Promise<Conversation>;
+  /** 某个对话的执行环境；附件下载和工具调用共用同一套容器与 staging。 */
+  env(conversationId: ConversationId): Promise<ExecutionEnv>;
   close(): Promise<void>;
 }
 
@@ -87,6 +91,30 @@ export async function openRuntime(
   const clients = new Map<string, RpcClient>();
   const staged = new Set<string>();
 
+  /** 容器 + staging + RPC 客户端；Harness 和飞书附件下载共用。 */
+  const buildEnv = async (target: {
+    conversationId: ConversationId | number | string;
+    cwd?: string;
+  }): Promise<ExecutionEnv> => {
+    const conversationId = String(target.conversationId);
+    const ref = ensureRunning(conversationId, containerOptions);
+
+    if (!staged.has(ref.name)) {
+      await stageWorkspace(conversationId, containerOptions);
+      staged.add(ref.name);
+    }
+
+    let client = clients.get(ref.name);
+    if (client === undefined) {
+      client = RpcClient.docker(ref.name);
+      clients.set(ref.name, client);
+    }
+    return new DockerExecutionEnv(client, {
+      id: ref.name,
+      cwd: target.cwd ?? "/workspace",
+    });
+  };
+
   const delivery =
     options.delivery ?? new LocalOutboxAdapter(join(settings.dataDir, "outbox"));
 
@@ -110,25 +138,7 @@ export async function openRuntime(
     {
       models,
       registry,
-      env: async (target) => {
-        const conversationId = String(target.conversationId);
-        const ref = ensureRunning(conversationId, containerOptions);
-
-        if (!staged.has(ref.name)) {
-          await stageWorkspace(conversationId, containerOptions);
-          staged.add(ref.name);
-        }
-
-        let client = clients.get(ref.name);
-        if (client === undefined) {
-          client = RpcClient.docker(ref.name);
-          clients.set(ref.name, client);
-        }
-        return new DockerExecutionEnv(client, {
-          id: ref.name,
-          cwd: target.cwd ?? "/workspace",
-        });
-      },
+      env: (target) => buildEnv(target),
     },
     context,
   );
@@ -147,6 +157,7 @@ export async function openRuntime(
         { ownership: { kind: "ownerless" }, agent: { model: settings.model } },
         context,
       ),
+    env: (conversationId: ConversationId) => buildEnv({ conversationId }),
     close: async () => {
       for (const client of clients.values()) client.close();
       await harness.close(context);

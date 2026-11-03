@@ -19,13 +19,21 @@ export type FeishuThreadState = {
 
 export type FeishuStateValue = {
   threads: Record<string, FeishuThreadState>;
+  /** 已处理过的 message_id；飞书重推同一消息时不再跑一遍。 */
+  seen: string[];
 };
+
+const MAX_SEEN = 500;
 
 export const FeishuStateDoc = defineDoc({
   kind: "design.feishu",
-  version: 1,
+  version: 2,
   scope: "session",
-  initial: (): FeishuStateValue => ({ threads: {} }),
+  initial: (): FeishuStateValue => ({ threads: {}, seen: [] }),
+  migrate: (value) => ({
+    threads: (value["threads"] as FeishuStateValue["threads"] | undefined) ?? {},
+    seen: [],
+  }),
   checkpointWhen: () => true,
 });
 
@@ -33,7 +41,26 @@ export async function readFeishuState(
   harness: Harness,
   context: Context,
 ): Promise<FeishuStateValue> {
-  return (await harness.snapshot(FeishuStateDoc, context)) ?? { threads: {} };
+  const value = await harness.snapshot(FeishuStateDoc, context);
+  return value === undefined
+    ? { threads: {}, seen: [] }
+    : { threads: value.threads ?? {}, seen: value.seen ?? [] };
+}
+
+/** true 表示第一次见到；false 表示重复投递，调用方应直接返回。 */
+export async function markFeishuMessageSeen(
+  harness: Harness,
+  messageId: string,
+  context: Context,
+): Promise<boolean> {
+  return harness.commit(async (tx) => {
+    const doc = await tx.doc(FeishuStateDoc);
+    doc.seen ??= [];
+    if (doc.seen.includes(messageId)) return false;
+    doc.seen.push(messageId);
+    if (doc.seen.length > MAX_SEEN) doc.seen.splice(0, doc.seen.length - MAX_SEEN);
+    return true;
+  }, context);
 }
 
 export async function writeFeishuThread(

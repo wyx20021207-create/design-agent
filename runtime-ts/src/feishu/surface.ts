@@ -20,16 +20,20 @@ import { TASK_REPORT_ENTRY } from "../harness/render-task.ts";
 import type { Runtime } from "../harness/runtime.ts";
 import { ThreadRegistry } from "../harness/thread-map.ts";
 import { messageText } from "../text.ts";
+import { downloadAttachments } from "./attachments.ts";
 import type { FeishuTransport } from "./client.ts";
 import { parseEvent, type FeishuEvent } from "./events.ts";
 import {
   advanceFeishuThread,
+  markFeishuMessageSeen,
   readFeishuState,
   writeFeishuThread,
   type FeishuThreadState,
 } from "./state.ts";
 
 const RETRY_MS = 10_000;
+/** 飞书补投可能延迟很久；超过这个时间的消息不再执行，避免一小时前的指令突然跑起来。 */
+const STALE_MS = 5 * 60 * 1_000;
 
 export interface FeishuSurfaceOptions {
   runtime: Runtime;
@@ -115,17 +119,46 @@ export class FeishuSurface {
     try {
       const parsed = parseEvent(event);
       if (parsed === undefined) {
+        this.#logger.info(
+          `飞书事件 ${event.event_id ?? "-"} 类型=${event.message.message_type} 未处理`,
+        );
         if (event.sender.sender_type === "app") return;
-        if (["image", "file", "audio", "media", "sticker"].includes(event.message.message_type)) {
+        if (["sticker", "share_chat", "share_user"].includes(event.message.message_type)) {
           await this.#transport.replyText(
             event.message.message_id,
-            "现在只能处理文本消息，图片和文件支持还在做。",
+            "这个类型的消息还处理不了；目前支持文本、图片和文件。",
             `da-unsupported-${event.message.message_id}`,
           );
         }
         return;
       }
-      if (parsed.text.length === 0) return;
+
+      this.#logger.info(
+        `飞书事件 ${parsed.eventId} msg=${parsed.messageId} ${parsed.chatType} ` +
+          `root=${parsed.replyTo} text=${JSON.stringify(parsed.text.slice(0, 80))} ` +
+          `attachments=${parsed.attachments.length}`,
+      );
+
+      if (parsed.text.length === 0 && parsed.attachments.length === 0) return;
+
+      const state = await readFeishuState(this.#runtime.harness, ctx);
+      if (state.seen.includes(parsed.messageId)) {
+        this.#logger.info(`重复消息 ${parsed.messageId}，忽略`);
+        return;
+      }
+
+      const age = Date.now() - parsed.createdAt;
+      if (Number.isFinite(age) && age > STALE_MS) {
+        const minutes = Math.round(age / 60_000);
+        this.#logger.info(`跳过过期消息 ${parsed.messageId}，延迟 ${minutes} 分钟`);
+        await this.#transport.replyText(
+          parsed.replyTo,
+          `这条消息是 ${minutes} 分钟前发的，已跳过；需要的话请重新发送。`,
+          `da-stale-${parsed.messageId}`,
+        );
+        await markFeishuMessageSeen(this.#runtime.harness, parsed.messageId, ctx);
+        return;
+      }
 
       const conversation = await this.#registry.resolve(
         parsed.threadKey,
@@ -137,10 +170,36 @@ export class FeishuSurface {
       const record = await this.#ensureThread(parsed.threadKey, parsed, conversation);
       this.#watch(parsed.threadKey, conversation, record);
 
-      await conversation.submit(
-        { type: "input", content: parsed.text, requestId: parsed.eventId },
-        ctx,
+      // 先回执，再下载附件、跑模型；长任务期间用户不会觉得消息丢了。
+      const pending = parsed.attachments.length > 0 ? `，收到 ${parsed.attachments.length} 个附件` : "";
+      await this.#transport.replyText(
+        parsed.replyTo,
+        `已收到${pending}。开始处理……`,
+        `da-ack-${parsed.messageId}`,
       );
+
+      let attachments: readonly string[] = [];
+      let failed: readonly string[] = [];
+      if (parsed.attachments.length > 0) {
+        const env = await this.#runtime.env(conversation.id);
+        const downloaded = await downloadAttachments(this.#transport, parsed.attachments, env, ctx);
+        attachments = downloaded.paths;
+        failed = downloaded.failed;
+      }
+
+      const blocks: string[] = [];
+      if (parsed.text.trim().length > 0) blocks.push(parsed.text.trim());
+      if (attachments.length > 0) {
+        blocks.push(`[附件]\n${attachments.map((path) => `- ${path}`).join("\n")}`);
+      }
+      if (failed.length > 0) {
+        blocks.push(`[附件未能读取] ${failed.join(", ")}`);
+      }
+      const content = blocks.join("\n\n").trim();
+      if (content.length === 0) return;
+
+      await conversation.submit({ type: "input", content, requestId: parsed.messageId }, ctx);
+      await markFeishuMessageSeen(this.#runtime.harness, parsed.messageId, ctx);
     } catch (error) {
       this.#logger.error("处理飞书事件失败", error);
       try {
@@ -206,7 +265,8 @@ export class FeishuSurface {
       for (const entry of fresh) {
         const text = messageText(entry.model?.[0]).trim();
         if (text.length > 0) {
-          await this.#transport.replyText(record.rootMessageId, text, `da-${entry.id}`);
+          const markdown = entry.kind === TASK_REPORT_ENTRY ? `**任务回执**\n\n${text}` : text;
+          await this.#transport.replyMarkdown(record.rootMessageId, markdown, `da-${entry.id}`);
         }
         last = entry.id;
       }

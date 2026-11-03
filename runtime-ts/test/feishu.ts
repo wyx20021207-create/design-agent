@@ -9,9 +9,11 @@ import { BACKGROUND_CONTEXT as ctx } from "@earendil-works/chord/context";
 
 import { loadSettings } from "../src/config.ts";
 import type { DeliveryAdapter, DeliveryBatch, DeliveryOutcome } from "../src/delivery/adapter.ts";
+import { attachmentName, sniffImageExtension } from "../src/feishu/attachments.ts";
 import type { FeishuTransport } from "../src/feishu/client.ts";
 import { FeishuDeliveryAdapter } from "../src/feishu/delivery.ts";
 import { parseEvent, threadKeyOf, type FeishuEvent } from "../src/feishu/events.ts";
+import { toCardMarkdown } from "../src/feishu/markdown.ts";
 import {
   advanceFeishuThread,
   feishuTargetForConversation,
@@ -37,6 +39,7 @@ const event = (overrides: Partial<FeishuEvent["message"]> = {}, extra: Partial<F
     message_type: "text",
     content: JSON.stringify({ text: "@_user_1 测试" }),
     mentions: [{ key: "@_user_1", name: "Design Agent", id: { open_id: "ou_bot" } }],
+    create_time: "1793683490000",
     ...overrides,
   },
   ...extra,
@@ -46,6 +49,7 @@ const top = parseEvent(event());
 check(top !== undefined, "顶层消息没有解析出来");
 check(top!.text === "测试", `@ 没有去掉：${JSON.stringify(top!.text)}`);
 check(top!.threadKey === `feishu-${CHAT}-root-${ROOT}`, `线程键不对：${top!.threadKey}`);
+check(top!.createdAt === 1_793_683_490_000, "消息创建时间没有解析");
 check(top!.replyTo === ROOT, "顶层消息的回复目标应该是它自己");
 
 const reply = parseEvent(event({ message_id: "om_reply", root_id: ROOT }));
@@ -80,6 +84,64 @@ const fromApp = parseEvent(
 check(fromApp === undefined, "机器人自己的消息不应处理");
 
 check(threadKeyOf({ ...event().message, message_id: "om_self" }) === `feishu-${CHAT}-root-om_self`, "独立顶层消息应自成一线程");
+
+const imageOnly = parseEvent(
+  event({
+    message_type: "image",
+    content: JSON.stringify({ image_key: "img_abc12345" }),
+    mentions: [],
+  }),
+);
+check(imageOnly !== undefined, "纯图片消息没有解析出来");
+check(imageOnly.text === "", "图片消息不应有文本");
+check(imageOnly.attachments.length === 1, "图片附件没有解析");
+check(imageOnly.attachments[0]?.type === "image", "附件类型不是 image");
+
+const fileOnly = parseEvent(
+  event({
+    message_type: "file",
+    content: JSON.stringify({ file_key: "file_xyz", file_name: "参考 图.pdf" }),
+    mentions: [],
+  }),
+);
+check(fileOnly?.attachments[0]?.name === "参考 图.pdf", "文件名没有保留");
+
+const postImage = parseEvent(
+  event({
+    message_type: "post",
+    content: JSON.stringify({ title: "", content: [[{ tag: "img", image_key: "img_post" }]] }),
+    mentions: [],
+  }),
+);
+check(postImage?.attachments[0]?.fileKey === "img_post", "富文本里的图片没有解析");
+
+const converted = toCardMarkdown(
+  "## 标题\n\n| 你要的 | 我产出的 |\n|---|---|\n| **静态图** | 多尺寸组图 |\n| 图表 | 折线图 |",
+);
+check(converted.includes("**标题**"), `标题没有转换：${converted}`);
+check(converted.includes("- **静态图**：多尺寸组图"), `表格没有转换成列表：${converted}`);
+check(!converted.includes("|---|"), "表格分隔行没有去掉");
+
+const fenced = toCardMarkdown("```bash\n# 不是标题\n```");
+check(fenced.includes("# 不是标题"), "代码块里的内容被改了");
+
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+check(sniffImageExtension(png) === ".png", "PNG 魔数识别失败");
+check(
+  attachmentName({ messageId: "m", fileKey: "img_12345678", type: "image" }, png) ===
+    "image-12345678.png",
+  "图片文件名不对",
+);
+check(
+  attachmentName({ messageId: "m", fileKey: "f", type: "file", name: "参考 图.pdf" }, png) ===
+    "参考 图.pdf",
+  "中文附件名被改了",
+);
+check(
+  attachmentName({ messageId: "m", fileKey: "f", type: "file", name: "../../etc/passwd" }, png) ===
+    "passwd",
+  "附件名里的路径没有剥掉",
+);
 
 const settings = loadSettings();
 const runtime = await openRuntime(settings);
@@ -119,6 +181,10 @@ try {
       calls.push(`text:${messageId}:${text}`);
       return ["m1"];
     },
+    async replyMarkdown(messageId, markdown) {
+      calls.push(`markdown:${messageId}:${markdown.slice(0, 40)}`);
+      return ["m4"];
+    },
     async replyImage(messageId, key) {
       calls.push(`image:${messageId}:${key}`);
       return "m2";
@@ -134,6 +200,10 @@ try {
     async uploadFile(bytes, name) {
       calls.push(`upload-file:${name}:${bytes.byteLength}`);
       return "file_key";
+    },
+    async downloadResource(messageId, fileKey, type) {
+      calls.push(`download:${messageId}:${fileKey}:${type}`);
+      return new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     },
   };
 
