@@ -36,10 +36,10 @@ import {
 const RETRY_MS = 10_000;
 /** 飞书补投可能延迟很久；超过这个时间的消息不再执行，避免一小时前的指令突然跑起来。 */
 const STALE_MS = 5 * 60 * 1_000;
-/** 进度推送间隔；调试时可以调小。 */
+/** 进度推送间隔；默认 5 分钟。调试时可以调小。 */
 const PROGRESS_MS = (() => {
-  const value = Number(process.env["DESIGN_AGENT_PROGRESS_MS"] ?? "120000");
-  return Number.isFinite(value) && value >= 5_000 ? value : 120_000;
+  const value = Number(process.env["DESIGN_AGENT_PROGRESS_MS"] ?? "300000");
+  return Number.isFinite(value) && value >= 5_000 ? value : 300_000;
 })();
 
 export interface FeishuSurfaceOptions {
@@ -69,6 +69,8 @@ export class FeishuSurface {
   readonly #starting = new Map<string, Promise<void>>();
   /** 每个线程一条进度定时器；空闲时自动停。 */
   readonly #progress = new Map<string, NodeJS.Timeout>();
+  /** 进度的起点；不随后台任务换成 generation 而后退。 */
+  readonly #progressStart = new Map<string, number>();
   #ws: lark.WSClient | undefined;
   #closed = false;
 
@@ -93,8 +95,16 @@ export class FeishuSurface {
       );
       if (conversation === undefined) continue;
       this.#watch(threadKey, conversation, record);
-      if (inspection.tasks.some((task) => task.record.conversationId === conversation.id)) {
-        this.#startProgress(threadKey, conversation.id, record.rootMessageId);
+      const tasks = inspection.tasks.filter(
+        (task) => task.record.conversationId === conversation.id,
+      );
+      if (tasks.length > 0) {
+        this.#startProgress(
+          threadKey,
+          conversation.id,
+          record.rootMessageId,
+          Math.min(...tasks.map((task) => task.record.startedAt ?? Date.now())),
+        );
       }
     }
 
@@ -121,6 +131,7 @@ export class FeishuSurface {
     this.#ws?.close({ force: true });
     for (const timer of this.#progress.values()) clearInterval(timer);
     this.#progress.clear();
+    this.#progressStart.clear();
     for (const stop of this.#watchers.values()) {
       try {
         await stop();
@@ -132,8 +143,14 @@ export class FeishuSurface {
   }
 
   /** 每两分钟看一次：还有活任务就回一句进度，空了就停。 */
-  #startProgress(threadKey: string, conversationId: ConversationId, rootMessageId: string): void {
+  #startProgress(
+    threadKey: string,
+    conversationId: ConversationId,
+    rootMessageId: string,
+    startedAt: number = Date.now(),
+  ): void {
     if (this.#closed || this.#progress.has(threadKey)) return;
+    this.#progressStart.set(threadKey, startedAt);
     const timer = setInterval(() => {
       void this.#postProgress(threadKey, conversationId, rootMessageId);
     }, PROGRESS_MS);
@@ -147,6 +164,7 @@ export class FeishuSurface {
       clearInterval(timer);
       this.#progress.delete(threadKey);
     }
+    this.#progressStart.delete(threadKey);
   }
 
   async #postProgress(
@@ -165,11 +183,18 @@ export class FeishuSurface {
         return;
       }
 
-      const startedAt = Math.min(...tasks.map((task) => task.record.startedAt ?? Date.now()));
+      const taskStart = Math.min(...tasks.map((task) => task.record.startedAt ?? Date.now()));
+      const startedAt = Math.min(this.#progressStart.get(threadKey) ?? taskStart, taskStart);
+      this.#progressStart.set(threadKey, startedAt);
       const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
       const live = await this.#runtime.harness.snapshot(LiveDoc, conversationId, ctx);
       const line = progressLine(live, tasks.map((task) => task.record.kind), elapsed);
-      await this.#transport.replyText(rootMessageId, line, `da-progress-${conversationId}-${elapsed}`);
+      this.#logger.info(`飞书进度 ${conversationId}: ${line}`);
+      await this.#transport.replyText(
+        rootMessageId,
+        line,
+        `da-progress-${conversationId}-${Date.now()}`,
+      );
     } catch (error) {
       this.#logger.error("飞书进度推送失败", error);
     }
