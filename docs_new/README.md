@@ -30,7 +30,10 @@
   - **异步 ReAct**：`start_render` 立刻返回 taskId；`RenderTask` 在后台跑命令、
     检查产物、写完成标记，再把回执作为一条输入投放回对话，唤醒模型开新一轮 run。
     崩溃后从最后一个 checkpoint 重跑，完成标记让重跑跳过已完成的工作
-- 下一步：故障注入（kill -9 后从检查点恢复）、交付幂等，然后入口层
+  - **交付幂等**：`upload_files` 在容器里算 sha256，对话级台账（Pi Durable doc）
+    记录 (路径, 摘要)，只记确认送达的文件；同一文件第二次调用直接返回已交付。
+    当前适配器把文件原子写入宿主机 `data/outbox/<conversation>/`
+- 下一步：入口层（Fastify API + SSE / 飞书 webhook），然后删除 Python 运行时
 
 ## 与 `docs/` 的关系
 

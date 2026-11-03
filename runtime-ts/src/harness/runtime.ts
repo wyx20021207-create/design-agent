@@ -22,6 +22,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import type { Settings } from "../config.ts";
+import { LocalOutboxAdapter } from "../delivery/adapter.ts";
 import { ensureRunning, type ContainerOptions } from "../env/container.ts";
 import { DockerExecutionEnv } from "../env/docker-execution-env.ts";
 import { RpcClient } from "../env/rpc.ts";
@@ -29,6 +30,7 @@ import { stageWorkspace } from "../staging/stage.ts";
 import { RenderTask } from "./render-task.ts";
 import { startRenderTool } from "./render-tool.ts";
 import { loadSkillIndex, renderSkillIndex } from "./skills.ts";
+import { createUploadTool } from "./upload-tool.ts";
 
 const preamble = (skillIndex: string): string => `You are a design agent working on your own computer.
 Your computer is a Linux sandbox at /workspace: the brand pack under /workspace/brand,
@@ -40,6 +42,9 @@ Run the gates in /workspace/tools before you call anything finished.
 
 Long renders go through start_render, not bash: it returns immediately, keeps running in the
 background, and sends you the result as a new message when it finishes. Keep working while it runs.
+
+When the person should receive files, call upload_files. It never sends the same file twice in
+this conversation, and a modified file is sent again.
 
 Skills:
 ${skillIndex}`;
@@ -81,7 +86,7 @@ export async function openRuntime(
   registry.install(
     defineExtension({
       name: "design-agent",
-      tools: [startRenderTool],
+      tools: [startRenderTool, createUploadTool(new LocalOutboxAdapter(join(settings.dataDir, "outbox")))],
       tasks: [RenderTask],
       sections: [
         section("preamble", () => preamble(renderSkillIndex(loadSkillIndex(settings.root))), {

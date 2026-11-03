@@ -16,7 +16,8 @@
     "cli": "tsx src/cli.ts",
     "ownership": "tsx test/ownership.ts",
     "async": "tsx test/async.ts",
-    "async-crash": "tsx test/async-crash-start.ts && tsx test/async-crash-resume.ts"
+    "async-crash": "tsx test/async-crash-start.ts && tsx test/async-crash-resume.ts",
+    "delivery": "tsx test/delivery.ts"
   },
   "dependencies": {
     "@earendil-works/chord": "^1.5.0",
